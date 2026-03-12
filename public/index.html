@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Who runs standup next? Pick two players, they play Rock Paper Scissors — the loser runs the next standup.">
+  <title>Who's Next? - Standup Picker</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>">
+</head>
+<body>
+  <button type="button" id="btn-theme-toggle" class="theme-toggle" title="Toggle light/dark mode" aria-label="Toggle theme">
+    <span class="theme-icon theme-icon-dark" aria-hidden="true">🌙</span>
+    <span class="theme-icon theme-icon-light" aria-hidden="true">☀️</span>
+  </button>
+  <div id="app">
+
+    <!-- Landing Screen -->
+    <section id="screen-landing" class="screen active">
+      <div class="landing-container">
+        <div class="logo">
+          <span class="logo-dice">🎲</span>
+          <h1>Who's Next<span class="accent">?</span></h1>
+          <p class="subtitle">Who runs standup next</p>
+        </div>
+        <button id="btn-create" class="btn btn-primary btn-large">
+          Create a Standup
+        </button>
+      </div>
+    </section>
+
+    <!-- Join Screen (name + avatar) -->
+    <section id="screen-join" class="screen">
+      <div class="join-container">
+        <h2>Join the Standup</h2>
+        <p class="room-code-display">Room: <span id="join-room-code"></span></p>
+        <div class="form-group">
+          <label for="input-name">Your Name</label>
+          <input type="text" id="input-name" placeholder="Enter your name" maxlength="20" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Pick Your Avatar</label>
+          <div id="avatar-grid" class="avatar-grid"></div>
+        </div>
+        <button id="btn-join" class="btn btn-primary" disabled>Join Room</button>
+      </div>
+    </section>
+
+    <!-- Lobby Screen -->
+    <section id="screen-lobby" class="screen">
+      <div class="lobby-container">
+        <div class="lobby-header">
+          <h2>Lobby</h2>
+          <div class="room-link-bar">
+            <span id="lobby-room-code" class="room-code-badge"></span>
+            <button id="btn-copy-link" class="btn btn-small" title="Copy invite link">
+              📋 Copy Link
+            </button>
+          </div>
+        </div>
+        <p class="lobby-instruction">The <strong>host is exempt</strong> from the roll.</p>
+        <div id="player-grid" class="player-grid"></div>
+        <div id="add-proxy-section" class="add-proxy-section host-only collapsed">
+          <button type="button" id="btn-toggle-add-proxy" class="add-proxy-toggle" aria-expanded="false">
+            <span class="add-proxy-toggle-text">Add absent player</span>
+            <span class="add-proxy-toggle-icon" aria-hidden="true">▼</span>
+          </button>
+          <div class="add-proxy-form">
+            <div class="form-group">
+              <label for="proxy-name">Name</label>
+              <input type="text" id="proxy-name" placeholder="e.g. Alex" maxlength="20" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label>Avatar</label>
+              <div id="proxy-avatar-grid" class="avatar-grid proxy-avatar-grid"></div>
+            </div>
+            <label class="checkbox-label">
+              <input type="checkbox" id="proxy-is-computer">
+              Computer plays for them
+            </label>
+            <div class="add-proxy-submit">
+              <button id="btn-add-proxy" class="btn btn-primary">Add</button>
+            </div>
+          </div>
+        </div>
+        <div class="lobby-actions">
+          <button id="btn-ready" class="btn btn-primary btn-large">Ready</button>
+          <p id="lobby-waiting-text" class="waiting-text hidden">Waiting for others...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dice Roll Screen -->
+    <section id="screen-rolling" class="screen">
+      <div class="rolling-container">
+        <h2>Rolling...</h2>
+        <div class="slot-machine">
+          <div class="slot" id="slot-1">
+            <div class="slot-inner">
+              <span class="slot-avatar"></span>
+              <span class="slot-name"></span>
+            </div>
+          </div>
+          <div class="vs-badge">VS</div>
+          <div class="slot" id="slot-2">
+            <div class="slot-inner">
+              <span class="slot-avatar"></span>
+              <span class="slot-name"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RPS Screen -->
+    <section id="screen-rps" class="screen">
+      <div class="rps-container">
+        <div class="rps-matchup">
+          <div class="rps-player" id="rps-player-1">
+            <span class="rps-avatar"></span>
+            <span class="rps-name"></span>
+          </div>
+          <div class="vs-badge">VS</div>
+          <div class="rps-player" id="rps-player-2">
+            <span class="rps-avatar"></span>
+            <span class="rps-name"></span>
+          </div>
+        </div>
+        <div id="rps-round-badge" class="round-badge">Round 1</div>
+
+        <!-- Active player picks -->
+        <div id="rps-pick" class="rps-pick hidden">
+          <p>Make your move!</p>
+          <div class="rps-buttons">
+            <button class="rps-btn" data-choice="rock">
+              <span class="rps-emoji">🪨</span>
+              <span>Rock</span>
+            </button>
+            <button class="rps-btn" data-choice="paper">
+              <span class="rps-emoji">📄</span>
+              <span>Paper</span>
+            </button>
+            <button class="rps-btn" data-choice="scissors">
+              <span class="rps-emoji">✂️</span>
+              <span>Scissors</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Waiting (submitted or spectator) -->
+        <div id="rps-waiting" class="rps-waiting hidden">
+          <div class="waiting-dots">
+            <span></span><span></span><span></span>
+          </div>
+          <p id="rps-waiting-text">Waiting for both players...</p>
+        </div>
+
+        <!-- Result reveal -->
+        <div id="rps-reveal" class="rps-reveal hidden">
+          <div class="reveal-choices">
+            <div class="reveal-choice" id="reveal-1">
+              <span class="reveal-emoji"></span>
+            </div>
+            <div class="reveal-choice" id="reveal-2">
+              <span class="reveal-emoji"></span>
+            </div>
+          </div>
+          <p id="reveal-text" class="reveal-text"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Result Screen -->
+    <section id="screen-result" class="screen">
+      <div class="result-container">
+        <div id="confetti-container"></div>
+        <div class="result-card">
+          <h2>Next to run standup...</h2>
+          <div id="result-player" class="result-player">
+            <span class="result-avatar"></span>
+            <span class="result-name"></span>
+          </div>
+          <p class="result-tagline">Better luck next time! 😄</p>
+        </div>
+        <div class="result-winner">
+          <span id="winner-avatar"></span>
+          <span id="winner-name"></span>
+          <span> escaped! 🎉</span>
+        </div>
+        <button id="btn-play-again" class="btn btn-primary host-only">🎲 Play Again</button>
+        <p class="not-host waiting-text">Waiting for the host...</p>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/sounds.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
