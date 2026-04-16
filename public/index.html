@@ -147,12 +147,18 @@
           </div>
         </div>
 
-        <!-- Waiting (submitted or spectator) -->
+        <!-- Waiting (participants or spectators) -->
         <div id="rps-waiting" class="rps-waiting hidden">
           <div class="waiting-dots">
             <span></span><span></span><span></span>
           </div>
           <p id="rps-waiting-text">Waiting for both players...</p>
+          <div id="rps-spectate-panel" class="rps-spectate-panel hidden">
+            <button type="button" id="btn-rps-spectate" class="btn btn-small" aria-pressed="false">
+              Spectate live picks
+            </button>
+            <div id="rps-live-weapons" class="rps-live-weapons hidden"></div>
+          </div>
         </div>
 
         <!-- Result reveal -->

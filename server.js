@@ -42,6 +42,8 @@ const NOUNS = [
 ];
 const ALLOWED_AVATARS = ['🤖', '🥷', '👽', '🧙', '🦊', '🐙', '🦄', '🐲', '🎃', '🦅', '🐺', '🧛', '🐱', '🐶', '🐼', '🦁', '🐸', '🐵', '🦉', '🐧', '🦩', '🐢', '🦋', '🐝', '🍀', '🌟', '⚡', '🔥', '❄️', '🌈'];
 const MAX_NAME_LENGTH = 20;
+/** Pause after both picks are broadcast so spectators can read live weapons before reveal / result. */
+const RPS_LIVE_SPECTATE_HOLD_MS = 1600;
 
 function generateRoomCode() {
   const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
@@ -53,6 +55,20 @@ function generateRoomCode() {
 
 function generatePlayerId() {
   return Math.random().toString(36).substring(2, 10);
+}
+
+function getProxyPlayerById(room, playerId) {
+  return (room.proxyPlayers || []).find((p) => p.id === playerId);
+}
+
+function getPublicRpsState(room) {
+  const rs = room.rpsState;
+  if (!rs) return { selected: [], round: 0, submittedIds: [] };
+  return {
+    selected: [...(rs.selected || [])],
+    round: rs.round || 0,
+    submittedIds: Object.keys(rs.choices || {}),
+  };
 }
 
 function getRoomState(room) {
@@ -67,13 +83,51 @@ function getRoomState(room) {
     hostId: room.hostId,
     players: [...realPlayers, ...proxyPlayers],
     phase: room.phase,
-    rpsState: room.rpsState,
+    rpsState: getPublicRpsState(room),
     readyIds: room.readyIds ? [...room.readyIds] : [],
   };
 }
 
-function getProxyPlayerById(room, playerId) {
-  return (room.proxyPlayers || []).find(p => p.id === playerId);
+/** Sockets that submit choices for the current RPS matchup (must not receive opponent live picks). */
+function getSocketsThatSubmitRPSChoices(room) {
+  const sockets = new Set();
+  const [id1, id2] = room.rpsState?.selected || [];
+  if (!id1 || !id2) return sockets;
+  for (const pid of [id1, id2]) {
+    const real = [...room.players.values()].find((p) => p.id === pid);
+    if (real?.socketId) sockets.add(real.socketId);
+    else {
+      const proxy = getProxyPlayerById(room, pid);
+      if (proxy && !proxy.isComputer && room.hostId) sockets.add(room.hostId);
+    }
+  }
+  return sockets;
+}
+
+async function emitRpsWaiting(room, roomCode) {
+  const submitted = Object.keys(room.rpsState.choices);
+  const liveChoices = { ...room.rpsState.choices };
+  const restricted = getSocketsThatSubmitRPSChoices(room);
+  const socks = await io.in(roomCode).fetchSockets();
+  for (const s of socks) {
+    if (restricted.has(s.id)) {
+      s.emit('rps-waiting', { submitted });
+    } else {
+      s.emit('rps-waiting', { submitted, liveChoices });
+    }
+  }
+}
+
+async function maybeDelayThenTryResolve(room, roomCode) {
+  if (Object.keys(room.rpsState.choices).length !== 2) {
+    tryResolveRPS(room, roomCode);
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, RPS_LIVE_SPECTATE_HOLD_MS));
+  const r = rooms.get(roomCode);
+  if (!r || r.phase !== 'rps') return;
+  if (Object.keys(r.rpsState.choices).length !== 2) return;
+  tryResolveRPS(r, roomCode);
 }
 
 function resolveRPS(a, b) {
@@ -99,9 +153,12 @@ function tryResolveRPS(room, roomCode) {
     });
     room.rpsState.choices = {};
     room.rpsState.round++;
-    setTimeout(() => {
+    setTimeout(async () => {
       const r = rooms.get(roomCode);
-      if (r?.phase === 'rps') io.to(roomCode).emit('room-state', getRoomState(r));
+      if (r?.phase === 'rps') {
+        io.to(roomCode).emit('room-state', getRoomState(r));
+        await emitRpsWaiting(r, roomCode);
+      }
     }, 2500);
   } else {
     const winnerId = result === 'a' ? id1 : id2;
@@ -149,7 +206,7 @@ function doRoll(room, roomCode) {
   io.to(roomCode).emit('room-state', getRoomState(room));
   io.to(roomCode).emit('dice-result', { selected, sequence });
 
-  setTimeout(() => {
+  setTimeout(async () => {
     const r = rooms.get(roomCode);
     if (!r || r.phase !== 'rolling') return;
     r.phase = 'rps';
@@ -161,9 +218,9 @@ function doRoll(room, roomCode) {
         r.rpsState.choices[id] = RPS_OPTIONS[Math.floor(Math.random() * 3)];
       }
     });
-    io.to(roomCode).emit('rps-waiting', { submitted: Object.keys(r.rpsState.choices) });
     io.to(roomCode).emit('room-state', getRoomState(r));
-    tryResolveRPS(r, roomCode);
+    await emitRpsWaiting(r, roomCode);
+    await maybeDelayThenTryResolve(r, roomCode);
   }, 4500);
 
   return true;
@@ -340,11 +397,7 @@ io.on('connection', (socket) => {
       room.rpsState.choices[player.id] = choice;
     }
 
-    io.to(currentRoom).emit('rps-waiting', {
-      submitted: Object.keys(room.rpsState.choices),
-    });
-
-    tryResolveRPS(room, currentRoom);
+    emitRpsWaiting(room, currentRoom).then(() => maybeDelayThenTryResolve(room, currentRoom));
   });
 
   socket.on('play-again', () => {

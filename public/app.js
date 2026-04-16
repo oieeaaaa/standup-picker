@@ -7,6 +7,10 @@ const state = {
   selectedAvatar: null,
   proxySelectedAvatar: null,
   currentPlayForPlayerId: null,
+  /** Server includes liveChoices on rps-waiting only for true spectators. */
+  canSpectateLiveRps: false,
+  rpsSpectateLive: false,
+  rpsLiveChoices: {},
 };
 
 const AVATARS = ['🤖', '🥷', '👽', '🧙', '🦊', '🐙', '🦄', '🐲', '🎃', '🦅', '🐺', '🧛', '🐱', '🐶', '🐼', '🦁', '🐸', '🐵', '🦉', '🐧', '🦩', '🐢', '🦋', '🐝', '🍀', '🌟', '⚡', '🔥', '❄️', '🌈'];
@@ -214,6 +218,17 @@ function setupEventListeners() {
     btn.setAttribute('aria-expanded', isExpanded);
     if (icon) icon.textContent = isExpanded ? '▲' : '▼';
   });
+
+  $('#btn-rps-spectate')?.addEventListener('click', () => {
+    SFX.click();
+    state.rpsSpectateLive = !state.rpsSpectateLive;
+    const btn = $('#btn-rps-spectate');
+    if (btn) {
+      btn.setAttribute('aria-pressed', state.rpsSpectateLive ? 'true' : 'false');
+      btn.textContent = state.rpsSpectateLive ? 'Stop spectating' : 'Spectate live picks';
+    }
+    renderRpsLiveWeapons();
+  });
 }
 
 function updateJoinButton() {
@@ -239,6 +254,16 @@ function setupSocketHandlers() {
 
   socket.on('room-state', (roomState) => {
     state.roomState = roomState;
+    if (roomState.phase !== 'rps') {
+      state.rpsSpectateLive = false;
+      state.canSpectateLiveRps = false;
+      state.rpsLiveChoices = {};
+      const btn = $('#btn-rps-spectate');
+      if (btn) {
+        btn.setAttribute('aria-pressed', 'false');
+        btn.textContent = 'Spectate live picks';
+      }
+    }
     updateHostStatus();
     renderByPhase();
   });
@@ -252,15 +277,29 @@ function setupSocketHandlers() {
     animateSlotMachine(sequence, selected);
   });
 
-  socket.on('rps-waiting', ({ submitted }) => {
+  socket.on('rps-waiting', (payload) => {
     if (state.roomState?.phase !== 'rps') return;
+    const { submitted, liveChoices } = payload;
+    state.canSpectateLiveRps = Object.prototype.hasOwnProperty.call(payload, 'liveChoices');
+    if (state.canSpectateLiveRps) {
+      state.rpsLiveChoices = { ...liveChoices };
+    } else {
+      state.rpsLiveChoices = {};
+    }
+
     const me = getMyPlayer();
-    const isParticipant = me && state.roomState.rpsState.selected.includes(me.id);
+    const selected = state.roomState.rpsState.selected || [];
+    const isParticipant = me && selected.includes(me.id);
     if (!isParticipant || submitted.includes(me.id)) {
       const count = submitted.length;
       $('#rps-waiting-text').textContent = count === 1
         ? 'One player has chosen... waiting for the other'
         : 'Waiting for both players...';
+    }
+
+    if ($('#rps-waiting') && !$('#rps-waiting').classList.contains('hidden')) {
+      syncRpsSpectatePanel();
+      renderRpsLiveWeapons();
     }
   });
 
@@ -269,7 +308,7 @@ function setupSocketHandlers() {
   });
 
   socket.on('new-host', ({ playerId }) => {
-    setTimeout(() => showResultScreen(playerId), 300);
+    setTimeout(() => showResultScreen(playerId), 900);
   });
 
   socket.on('error-msg', ({ message }) => {
@@ -475,6 +514,44 @@ function animateSlotMachine(sequence, selected) {
   tick();
 }
 
+function syncRpsSpectatePanel() {
+  const panel = $('#rps-spectate-panel');
+  if (!panel) return;
+  panel.classList.toggle('hidden', !state.canSpectateLiveRps);
+}
+
+function renderRpsLiveWeapons() {
+  const wrap = $('#rps-live-weapons');
+  if (!wrap) return;
+  const show = state.rpsSpectateLive && state.canSpectateLiveRps;
+  if (!show) {
+    wrap.classList.add('hidden');
+    wrap.innerHTML = '';
+    return;
+  }
+  const room = state.roomState;
+  const sel = room?.rpsState?.selected;
+  if (!sel || sel.length !== 2) return;
+  const choices = state.rpsLiveChoices;
+  wrap.innerHTML = '';
+  sel.forEach((pid) => {
+    const row = document.createElement('div');
+    row.className = 'rps-live-weapon-row';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'rps-live-weapon-name';
+    nameEl.textContent = getPlayerById(pid)?.name ?? '?';
+    const emojiEl = document.createElement('span');
+    emojiEl.className = 'rps-live-weapon-emoji';
+    emojiEl.setAttribute('aria-hidden', 'true');
+    const ch = choices[pid];
+    emojiEl.textContent = ch ? (RPS_EMOJI[ch] || '?') : '…';
+    row.appendChild(nameEl);
+    row.appendChild(emojiEl);
+    wrap.appendChild(row);
+  });
+  wrap.classList.remove('hidden');
+}
+
 // === RPS Rendering ===
 function renderRPS() {
   const room = state.roomState;
@@ -497,16 +574,18 @@ function renderRPS() {
   $('#rps-round-badge').textContent = round > 1 ? `Round ${round} — Sudden Death!` : 'Round 1';
 
   const me = getMyPlayer();
+  const submittedIds = room.rpsState.submittedIds || [];
   const isParticipant = me && room.rpsState.selected.includes(me.id);
-  const hasChosen = me && room.rpsState.choices && room.rpsState.choices[me.id];
   const isHost = me && me.socketId === room.hostId;
 
   // Which selected player (if any) is a proxy that needs the host to play for them?
-  const playForPlayerId = [id1, id2].find(id => {
+  const playForPlayerId = [id1, id2].find((id) => {
     const p = getPlayerById(id);
-    return p && p.isProxy && !p.isComputer && !room.rpsState.choices[id];
+    return p && p.isProxy && !p.isComputer && !submittedIds.includes(id);
   });
   const playForPlayer = playForPlayerId ? getPlayerById(playForPlayerId) : null;
+
+  const needOwnPick = isParticipant && !submittedIds.includes(me.id);
 
   // Reset RPS buttons
   $$('.rps-btn').forEach(b => {
@@ -514,7 +593,7 @@ function renderRPS() {
     b.disabled = false;
   });
 
-  if (isParticipant && !hasChosen) {
+  if (needOwnPick) {
     state.currentPlayForPlayerId = null;
     $('#rps-pick p').textContent = 'Make your move!';
     showRPSSection('pick');
@@ -523,12 +602,15 @@ function renderRPS() {
     state.currentPlayForPlayerId = playForPlayerId;
     $('#rps-pick p').textContent = `Play for ${playForPlayer.name}!`;
     showRPSSection('pick');
+    SFX.newRound();
   } else {
     state.currentPlayForPlayerId = null;
     showRPSSection('waiting');
     $('#rps-waiting-text').textContent = isParticipant
       ? 'Waiting for opponent...'
       : 'Waiting for both players...';
+    syncRpsSpectatePanel();
+    renderRpsLiveWeapons();
   }
 }
 

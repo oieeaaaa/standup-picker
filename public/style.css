@@ -859,6 +859,50 @@ body.is-host .not-host { display: none; }
   padding: 40px 0;
 }
 
+.rps-spectate-panel {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.rps-live-weapons {
+  width: 100%;
+  max-width: 320px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  text-align: left;
+}
+
+.rps-live-weapon-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.rps-live-weapon-row + .rps-live-weapon-row {
+  border-top: 1px solid var(--bg-card);
+}
+
+.rps-live-weapon-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rps-live-weapon-emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
 .waiting-dots {
   display: flex;
   gap: 8px;
